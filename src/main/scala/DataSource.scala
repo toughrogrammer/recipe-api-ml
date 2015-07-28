@@ -5,6 +5,7 @@ import io.prediction.controller.EmptyEvaluationInfo
 import io.prediction.controller.EmptyActualResult
 import io.prediction.controller.Params
 import io.prediction.data.storage.Event
+import io.prediction.data.storage.Storage
 import io.prediction.data.store.PEventStore
 
 import org.apache.spark.SparkContext
@@ -17,6 +18,7 @@ case class DataSourceEvalParams(kFold: Int, queryNum: Int)
 
 case class DataSourceParams(
   appName: String,
+  appId: Int,
   evalParams: Option[DataSourceEvalParams]) extends Params
 
 class DataSource(val dsp: DataSourceParams)
@@ -25,68 +27,48 @@ class DataSource(val dsp: DataSourceParams)
 
   @transient lazy val logger = Logger[this.type]
 
-  def getRatings(sc: SparkContext): RDD[Rating] = {
-
-    val eventsRDD: RDD[Event] = PEventStore.find(
-      appName = dsp.appName,
+  override
+  def readTraining(sc: SparkContext): TrainingData = {
+    val eventsDb = Storage.getPEvents()
+    val eventsRDD: RDD[Event] = eventsDb.find(
+      appId = dsp.appId,
       entityType = Some("user"),
-      eventNames = Some(List("rate", "buy")), // read "rate" and "buy" event
+      eventNames = Some(List("view", "like", "cancel_like")), // read "view" and "like" and "cancel_like" event
       // targetEntityType is optional field of an event.
       targetEntityType = Some(Some("item")))(sc)
 
     val ratingsRDD: RDD[Rating] = eventsRDD.map { event =>
-      val rating = try {
+      try {
         val ratingValue: Double = event.event match {
-          case "rate" => event.properties.get[Double]("rating")
-          case "buy" => 4.0 // map buy event to rating value of 4
+          case "view" => 1.0 // MODIFIED, map view event to rating value of 1
+          case "like" => 5.0 // MODIFIED, map like event to rating value of 5
+          case "cancel_like" => -5.0 // MODIFIED, map cancel_like event to rating value of -5 
           case _ => throw new Exception(s"Unexpected event ${event} is read.")
         }
-        // entityId and targetEntityId is String
-        Rating(event.entityId,
-          event.targetEntityId.get,
-          ratingValue)
+
+        // MODIFIED
+        // key is (user id, item id)
+        // value is the rating value
+        ((event.entityId, event.targetEntityId.get), ratingValue)
+
       } catch {
         case e: Exception => {
           logger.error(s"Cannot convert ${event} to Rating. Exception: ${e}.")
           throw e
         }
       }
-      rating
+    }
+    // MODIFIED
+    // sum all values for the same user id and item id key
+    .reduceByKey { case (a, b) => a + b }
+    .map { case ((uid, iid), r) =>
+      Rating(uid, iid, r)
     }.cache()
 
-    ratingsRDD
-  }
-
-  override
-  def readTraining(sc: SparkContext): TrainingData = {
-    new TrainingData(getRatings(sc))
-  }
-
-  override
-  def readEval(sc: SparkContext)
-  : Seq[(TrainingData, EmptyEvaluationInfo, RDD[(Query, ActualResult)])] = {
-    require(!dsp.evalParams.isEmpty, "Must specify evalParams")
-    val evalParams = dsp.evalParams.get
-
-    val kFold = evalParams.kFold
-    val ratings: RDD[(Rating, Long)] = getRatings(sc).zipWithUniqueId
-    ratings.cache
-
-    (0 until kFold).map { idx => {
-      val trainingRatings = ratings.filter(_._2 % kFold != idx).map(_._1)
-      val testingRatings = ratings.filter(_._2 % kFold == idx).map(_._1)
-
-      val testingUsers: RDD[(String, Iterable[Rating])] = testingRatings.groupBy(_.user)
-
-      (new TrainingData(trainingRatings),
-        new EmptyEvaluationInfo(),
-        testingUsers.map {
-          case (user, ratings) => (Query(user, evalParams.queryNum), ActualResult(ratings.toArray))
-        }
-      )
-    }}
+    new TrainingData(ratingsRDD)
   }
 }
+
 
 case class Rating(
   user: String,

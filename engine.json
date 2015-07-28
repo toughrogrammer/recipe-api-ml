@@ -1,10 +1,11 @@
 {
-  "id": "default",
+  "id": "Default",
   "description": "Default settings",
   "engineFactory": "com.recipe.RecommendationEngine",
   "datasource": {
     "params" : {
-      "appName": "INVALID_APP_NAME"
+      "appId": 4,
+      "appName": "MyRecipe"
     }
   },
   "algorithms": [
