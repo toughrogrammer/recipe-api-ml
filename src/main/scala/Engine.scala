@@ -5,15 +5,14 @@ import io.prediction.controller.Engine
 
 case class Query(
   user: String,
-  num: Int
+  num: Int,
+  categories: Option[Set[String]],
+  whiteList: Option[Set[String]],
+  blackList: Option[Set[String]]
 ) extends Serializable
 
 case class PredictedResult(
   itemScores: Array[ItemScore]
-) extends Serializable
-
-case class ActualResult(
-  ratings: Array[Rating]
 ) extends Serializable
 
 case class ItemScore(
@@ -21,12 +20,12 @@ case class ItemScore(
   score: Double
 ) extends Serializable
 
-object RecommendationEngine extends IEngineFactory {
+object ECommerceRecommendationEngine extends IEngineFactory {
   def apply() = {
     new Engine(
       classOf[DataSource],
       classOf[Preparator],
-      Map("als" -> classOf[ALSAlgorithm]),
+      Map("ecomm" -> classOf[ECommAlgorithm]), // ADDED
       classOf[Serving])
   }
 }
