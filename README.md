@@ -132,14 +132,14 @@ engine_client = predictionio.EngineClient(url="http://localhost:8000")
 
 print "Sending query..."
 
-engine_client.send_query(
+print engine_client.send_query(
   {
     "user": "u10", 
     "num": 50
   }
 )
 
-engine_client.send_query(
+print engine_client.send_query(
   {
     "user": "u11",
     "num": 10,
