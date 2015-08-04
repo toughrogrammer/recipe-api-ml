@@ -35,7 +35,7 @@ PredictionIO의 'E-Commerce Recommendation Engine Template'과 'Similar Product 
 
 * A ranked list of recommended itemIDs
 
-### Sending data & query example
+## Sending data & query example
 
 send_data.py:
 
