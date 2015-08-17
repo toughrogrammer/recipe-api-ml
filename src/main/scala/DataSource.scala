@@ -24,7 +24,7 @@ class DataSource(val dsp: DataSourceParams)
   override
   def readTraining(sc: SparkContext): TrainingData = {
 
-    // create a RDD of (entityID, User)
+    // (entityID, User) RDD 생성
     val usersRDD: RDD[(String, User)] = PEventStore.aggregateProperties(
       appName = dsp.appName,
       entityType = "user"
@@ -41,14 +41,29 @@ class DataSource(val dsp: DataSourceParams)
       (entityId, user)
     }.cache()
 
-    // create a RDD of (entityID, Item)
+    // (entityID, Item) RDD 생성
     val itemsRDD: RDD[(String, Item)] = PEventStore.aggregateProperties(
       appName = dsp.appName,
       entityType = "item"
     )(sc).map { case (entityId, properties) =>
       val item = try {
-        // Assume categories is optional property of item.
-        Item(categories = properties.getOpt[List[String]]("categories"))
+        /**
+         *  title = 레시피이름
+         *  categories = 음식카테고리
+         *  feelings = 맛, 식감
+         *  cooktime = 조리시간
+         *  amount = 칼로리/1인분
+         *  expire = 보관기간
+         */
+        val title: String = properties.get[String]("title") 
+        val categories: Array[String] = properties.get[Array[String]]("categories")
+        val feelings: Array[String] = properties.get[Array[String]]("feelings")
+        val cooktime: Int = properties.get[Int]("cooktime")
+        val amount: Int = properties.get[Int]("amount")
+        val expire: Int = properties.get[Int]("expire")
+
+        // 다음 feature들을 이용해 ContentBasedFiltering을 적용할 예정
+        Item(entityId, title, categories, feelings, cooktime, amount, expire)
       } catch {
         case e: Exception => {
           logger.error(s"Failed to get properties ${properties} of" +
@@ -59,14 +74,15 @@ class DataSource(val dsp: DataSourceParams)
       (entityId, item)
     }.cache()
 
+    // eventRDD 생성: 유저별 like, view, cancel_like 이벤트를 이용해 CollaborativeFiltering을 적용할 예정
     val eventsRDD: RDD[Event] = PEventStore.find(
       appName = dsp.appName,
       entityType = Some("user"),
-      eventNames = Some(List("view", "like", "cancel_like")), // MODIFIED
-      // targetEntityType is optional field of an event.
+      eventNames = Some(List("view", "like", "cancel_like")), 
       targetEntityType = Some(Some("item")))(sc)
       .cache()
 
+    // view이벤트: 레시피 클릭
     val viewEventsRDD: RDD[ViewEvent] = eventsRDD
       .filter { event => event.event == "view" }
       .map { event =>
@@ -84,6 +100,7 @@ class DataSource(val dsp: DataSourceParams)
         }
       }
 
+    // like, cancel_like 이벤트: 레시피 좋아요 버튼 클릭 및 클릭 해제
     val likeEventsRDD: RDD[LikeEvent] = eventsRDD
       .filter { event => event.event == "like" | event.event == "cancel_like"}  // MODIFIED
       .map { event =>
@@ -102,22 +119,35 @@ class DataSource(val dsp: DataSourceParams)
         }
       }
 
+    // 모든 Training Data: 각 아이템 별 feature, 각 유저 별 view, like, cancel_like 이벤트로 이루어짐
     new TrainingData(
       users = usersRDD,
       items = itemsRDD,
       viewEvents = viewEventsRDD,
-      likeEvents = likeEventsRDD  // MODIFIED
+      likeEvents = likeEventsRDD  
     )
   }
 }
 
 case class User()
 
-case class Item(categories: Option[List[String]])
+case class Item(
+  item: String, 
+  title: String, 
+  categories: Array[String], 
+  feelings: Array[String], 
+  cooktime: Int,
+  amount: Int, 
+  expire: Int
+)
 
-case class ViewEvent(user: String, item: String, t: Long)
+case class ViewEvent(
+  user: String, 
+  item: String, 
+  t: Long
+)
 
-case class LikeEvent( // MODIFIED
+case class LikeEvent( 
   user: String,
   item: String,
   t: Long,
@@ -128,7 +158,7 @@ class TrainingData(
   val users: RDD[(String, User)],
   val items: RDD[(String, Item)],
   val viewEvents: RDD[ViewEvent],
-  val likeEvents: RDD[LikeEvent] // MODIFIED
+  val likeEvents: RDD[LikeEvent] 
 ) extends Serializable {
   override def toString = {
     s"users: [${users.count()} (${users.take(2).toList}...)]" +

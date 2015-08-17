@@ -17,47 +17,85 @@ def send_event(client):
     entity_id="u21"
   )
 
-  client.create_event(
-    event="$set",
-    entity_type="item",
-    entity_id="i101",
-    properties={
-      "categories" : "c3"
-    }
-  )
+
+  # client.create_event(
+  #   event="$set",
+  #   entity_type="item",
+  #   entity_id="i101",
+  #   properties={
+  #     "categories" : "c3"
+  #   }
+  # )
+
+  # client.create_event(
+  #   event="$set",
+  #   entity_type="constraint",
+  #   entity_id="unavailableItems",
+  #   properties={
+  #     "items" : ["i4", "i14", "i11"]
+  #   }
+  # )
+  
+
 
   client.create_event(
-    event="$set",
-    entity_type="constraint",
-    entity_id="unavailableItems",
-    properties={
-      "items" : ["i4", "i14", "i11"]
-    }
+    event="view",
+    entity_type="user",
+    entity_id="u21",
+    target_entity_type="item",
+    target_entity_id="i1"
   )
 
   client.create_event(
     event="view",
     entity_type="user",
-    entity_id="u7",
+    entity_id="u21",
     target_entity_type="item",
-    target_entity_id="i80"
+    target_entity_id="i3"
   )
 
   client.create_event(
-    event="like",
+    event="view",
     entity_type="user",
-    entity_id="u7",
+    entity_id="u21",
     target_entity_type="item",
-    target_entity_id="i80"
+    target_entity_id="i4"
   )
 
   client.create_event(
-    event="cancel_like",
+    event="view",
     entity_type="user",
-    entity_id="u8",
+    entity_id="u21",
     target_entity_type="item",
-    target_entity_id="i80"
+    target_entity_id="i6"
   )
+
+  client.create_event(
+    event="view",
+    entity_type="user",
+    entity_id="u21",
+    target_entity_type="item",
+    target_entity_id="i8"
+  )
+
+
+
+
+  # client.create_event(
+  #   event="like",
+  #   entity_type="user",
+  #   entity_id="u1",
+  #   target_entity_type="item",
+  #   target_entity_id="i2"
+  # )
+
+  # client.create_event(
+  #   event="cancel_like",
+  #   entity_type="user",
+  #   entity_id="u1",
+  #   target_entity_type="item",
+  #   target_entity_id="i2"
+  # )
 
   print "Complete"
 
@@ -65,7 +103,7 @@ def send_event(client):
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(
     description="Import sample data for e-commerce recommendation engine")
-  parser.add_argument('--access_key', default='SGjdQqdg3dKfoLtRrtePkSe2yQzCXcpuqSdwGbdHSTj0770tfHNhQ0NV5KCJ5nu3')
+  parser.add_argument('--access_key', default='LkOTv7EL7rrV93Y5iTUQTvPoM13NbI1L8wbkPsLRKM4mjRn4KeFWBwQSLKTnTN5G')
   parser.add_argument('--url', default="http://localhost:7070")
 
   args = parser.parse_args()

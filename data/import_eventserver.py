@@ -14,7 +14,7 @@ def import_events(client):
   print client.get_status()
   print "Importing data..."
 
-  # generate 10 users, with user ids u1,u2,....,u20
+  # generate 20 users, with user ids u1,u2,....,u20
   user_ids = ["u%s" % i for i in range(1, 21)]
   for user_id in user_ids:
     print "Set user", user_id
@@ -25,25 +25,38 @@ def import_events(client):
     )
     count += 1
 
-  # generate 50 items, with item ids i1,i2,....,i100
-  # random assign 1 to 9 categories among c1-c10 to items
-  categories = ["c%s" % i for i in range(1, 11)]
+  # generate 100 items, with item ids i1,i2,....,i100
+  sampleCategories = ["c%s" % i for i in range(1, 5)]
+  #sampleFeelings = ["f%s" % i for i in range(1, 10)]
+  sampleFeelings = ["f%s" % i for i in range(1, 3)]
   item_ids = ["i%s" % i for i in range(1, 101)]
   for item_id in item_ids:
-    print "Set item", item_id
+    title = "recipe " + item_id
+    categories = random.sample(sampleCategories, 1)
+    #feelings = random.sample(sampleFeelings, random.randint(1, 3))
+    feelings = random.sample(sampleFeelings, 2)
+    cooktime = 30 #random.randint(10, 50)
+    amount = 30 #random.randint(100, 700)
+    expire = 30 #random.randint(1, 15)
+    print "Set item", item_id, "= title:", title, ", category:", categories, ", feelings:", feelings, ", cooktime:", cooktime, ", amount: ", amount, ", expire: ", expire
     client.create_event(
       event="$set",
       entity_type="item",
       entity_id=item_id,
       properties={
-        "categories" : random.sample(categories, random.randint(1, 9))
+        "title" : title,
+        "categories" : categories,
+        "feelings" : feelings,
+        "cooktime" : cooktime,
+        "amount" : amount,
+        "expire" : expire
       }
     )
     count += 1
 
-  # each user randomly viewed 50 items
+  # each user randomly viewed 10 items
   for user_id in user_ids:
-    for viewed_item in random.sample(item_ids, 50):
+    for viewed_item in random.sample(item_ids, 10):
       print "User", user_id ,"views item", viewed_item
       client.create_event(
         event="view",
@@ -67,7 +80,7 @@ def import_events(client):
 
         # randomly cancel like some of the viewed items
         if random.choice([True, False]):
-          print "User", user_id ,"cancels like item", viewed_item
+          print "User", user_id ,"cancel_like item", viewed_item
           client.create_event(
             event="cancel_like",
             entity_type="user",
@@ -82,7 +95,7 @@ def import_events(client):
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(
     description="Import sample data for e-commerce recommendation engine")
-  parser.add_argument('--access_key', default='SGjdQqdg3dKfoLtRrtePkSe2yQzCXcpuqSdwGbdHSTj0770tfHNhQ0NV5KCJ5nu3')
+  parser.add_argument('--access_key', default='LkOTv7EL7rrV93Y5iTUQTvPoM13NbI1L8wbkPsLRKM4mjRn4KeFWBwQSLKTnTN5G')
   parser.add_argument('--url', default="http://localhost:7070")
 
   args = parser.parse_args()
