@@ -1,153 +1,185 @@
-# 레시피 추천 알고리즘
+# E-Commerce Recommendation Template
 
-## 설명
+## Documentation
 
-PredictionIO의 'E-Commerce Recommendation Engine Template'과 'Similar Product Engine Template'을 결합, 수정, 보완하여 완성한 추천 알고리즘 엔진입니다.
+Please refer to http://docs.prediction.io/templates/ecommercerecommendation/quickstart/
 
-이 엔진은 다음과 같은 기능들을 제공합니다.
+## Versions
 
-* 기존 유저의 최근 행동을 분석하여 비슷한(선호할만한) 아이템을 추천
-* 기존 유저에게 비슷한 아이템이 없을 경우 대중적으로 인기있는 아이템을 추천
-* 새로운 유저에게는 대중적으로 인기있는 아이템을 추천
-* 보지 않은 아이템만 추천할 수 있음 (optional)
-* 카테고리, 화이트리스트, 블랙리스트 필터링 가능 (optional)
-* 아이템을 일시 접근불가 설정 가능 (optional)
+### v0.4.0
 
-## 사용법
+- Change from ALSAlgorithm.scala to ECommAlgorithm.scala
 
-### Event Data Requirements
+  * return popular bought items when no information is found for the user.
+  * add "similarEvents" parameter for configuration what user-to-item events are used for finding similar items
+  * re-structure the Algorithm code for easier customization and testing
 
-* Users' view events
-* Users' like events
-* Users' cancel_like events
-* Items' with categories properties
-* Constraint unavailable set events
+- add some unit tests for testing code that may be customized
 
-### Input Query
+### v0.3.1
 
-* UserID
-* Num of items to be recommended
-* List of white-listed item categories (optional)
-* List of white-listed itemIDs (optional)
-* List of black-listed itemIDs (optional)
+- use INVALID_APP_NAME as default appName in engine.json
 
-### Output PredictedResult
+### v0.3.0
 
-* A ranked list of recommended itemIDs
+- update for PredictionIO 0.9.2, including:
 
-## Sending data & query example
+  - use new PEventStore and LEventStore API
+  - use appName in DataSource and Algorithm parameters
 
-send_data.py:
+
+### v0.2.0
+
+- update build.sbt and template.json for PredictionIO 0.9.2
+
+### v0.1.1
+
+- update for PredictionIO 0.9.0
+
+### v0.1.0
+
+- initial version
+
+
+## Development Notes
+
+### import sample data
+
+```
+$ python data/import_eventserver.py --access_key <your_access_key>
+```
+
+### query
+
+normal:
+
+```
+$ curl -H "Content-Type: application/json" \
+-d '{
+  "user" : "u1",
+  "num" : 10 }' \
+http://localhost:8000/queries.json \
+-w %{time_connect}:%{time_starttransfer}:%{time_total}
+```
+
+```
+$ curl -H "Content-Type: application/json" \
+-d '{
+  "user" : "u1",
+  "num": 10,
+  "categories" : ["c4", "c3"]
+}' \
+http://localhost:8000/queries.json \
+-w %{time_connect}:%{time_starttransfer}:%{time_total}
+```
+
+```
+curl -H "Content-Type: application/json" \
+-d '{
+  "user" : "u1",
+  "num": 10,
+  "whiteList": ["i21", "i26", "i40"]
+}' \
+http://localhost:8000/queries.json \
+-w %{time_connect}:%{time_starttransfer}:%{time_total}
+```
+
+```
+curl -H "Content-Type: application/json" \
+-d '{
+  "user" : "u1",
+  "num": 10,
+  "blackList": ["i21", "i26", "i40"]
+}' \
+http://localhost:8000/queries.json \
+-w %{time_connect}:%{time_starttransfer}:%{time_total}
+```
+
+unknown user:
+
+```
+curl -H "Content-Type: application/json" \
+-d '{
+  "user" : "unk1",
+  "num": 10}' \
+http://localhost:8000/queries.json \
+-w %{time_connect}:%{time_starttransfer}:%{time_total}
+```
+
+### handle new user
+
+new user:
+
+```
+curl -H "Content-Type: application/json" \
+-d '{
+  "user" : "x1",
+  "num": 10}' \
+http://localhost:8000/queries.json \
+-w %{time_connect}:%{time_starttransfer}:%{time_total}
+```
+
+import some view events and try to get recommendation for x1 again.
+
+```
+accessKey=<YOUR_ACCESS_KEY>
+```
+
+```
+curl -i -X POST http://localhost:7070/events.json?accessKey=$accessKey \
+-H "Content-Type: application/json" \
+-d '{
+  "event" : "view",
+  "entityType" : "user"
+  "entityId" : "x1",
+  "targetEntityType" : "item",
+  "targetEntityId" : "i2",
+  "eventTime" : "2015-02-17T02:11:21.934Z"
+}'
+
+curl -i -X POST http://localhost:7070/events.json?accessKey=$accessKey \
+-H "Content-Type: application/json" \
+-d '{
+  "event" : "view",
+  "entityType" : "user"
+  "entityId" : "x1",
+  "targetEntityType" : "item",
+  "targetEntityId" : "i3",
+  "eventTime" : "2015-02-17T02:12:21.934Z"
+}'
 
 ```
 
-import predictionio
-import argparse
-import random
+## handle unavailable items
 
-SEED = 3
-
-def send_event(client):
-  random.seed(SEED)
-  count = 0
-  print client.get_status()
-  print "Sending data..."
-
-  client.create_event(
-    event="$set",
-    entity_type="user",
-    entity_id="u21"
-  )
-
-  client.create_event(
-    event="$set",
-    entity_type="item",
-    entity_id="i101",
-    properties={
-      "categories" : "c3"
-    }
-  )
-
-  client.create_event(
-    event="$set",
-    entity_type="constraint",
-    entity_id="unavailableItems",
-    properties={
-      "items" : ["i4", "i14", "i11"]
-    }
-  )
-
-  client.create_event(
-    event="view",
-    entity_type="user",
-    entity_id="u7",
-    target_entity_type="item",
-    target_entity_id="i80"
-  )
-
-  client.create_event(
-    event="like",
-    entity_type="user",
-    entity_id="u7",
-    target_entity_type="item",
-    target_entity_id="i80"
-  )
-
-  client.create_event(
-    event="cancel_like",
-    entity_type="user",
-    entity_id="u8",
-    target_entity_type="item",
-    target_entity_id="i80"
-  )
-
-  print "Complete"
-
-
-if __name__ == '__main__':
-  parser = argparse.ArgumentParser(
-    description="Import sample data for e-commerce recommendation engine")
-  parser.add_argument('--access_key', default='SGjdQqdg3dKfoLtRrtePkSe2yQzCXcpuqSdwGbdHSTj0770tfHNhQ0NV5KCJ5nu3')
-  parser.add_argument('--url', default="http://localhost:7070")
-
-  args = parser.parse_args()
-  print args
-
-  client = predictionio.EventClient(
-    access_key=args.access_key,
-    url=args.url,
-    threads=5,
-    qsize=500)
-  send_event(client)
+Set the following items as unavailable (need to specify complete list each time when this list is changed):
 
 ```
-
-
-send-query.py:
-
-```
-
-import predictionio
-engine_client = predictionio.EngineClient(url="http://localhost:8000")
-
-print "Sending query..."
-
-print engine_client.send_query(
-  {
-    "user": "u10", 
-    "num": 50
+curl -i -X POST http://localhost:7070/events.json?accessKey=$accessKey \
+-H "Content-Type: application/json" \
+-d '{
+  "event" : "$set",
+  "entityType" : "constraint"
+  "entityId" : "unavailableItems",
+  "properties" : {
+    "items": ["i43", "i20", "i37", "i3", "i4", "i5"],
   }
-)
-
-print engine_client.send_query(
-  {
-    "user": "u11",
-    "num": 10,
-    "categories": ["c4", "c3"],
-    "whiteList": ["i1", "i23", "i26", "i31"],
-    "blackList": ["i21", "i25", "i30"]
-  }
-)
-
+  "eventTime" : "2015-02-17T02:11:21.934Z"
+}'
 ```
 
+Set empty list when no more items unavailable:
+
+```
+curl -i -X POST http://localhost:7070/events.json?accessKey=$accessKey \
+-H "Content-Type: application/json" \
+-d '{
+  "event" : "$set",
+  "entityType" : "constraint"
+  "entityId" : "unavailableItems",
+  "properties" : {
+    "items": [],
+  }
+  "eventTime" : "2015-02-18T02:11:21.934Z"
+}'
+```
