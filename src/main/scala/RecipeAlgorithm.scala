@@ -32,7 +32,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
  * seed: MLlib ALS 알고리즘의 random seed. (Optional)
  * dimension: 벡터화 된 아이템의 차원 수
  * cooktimeWeight: 조리시간의 가중치
- * amountWeight: 칼로리의 가중치
+ * caloriesWeight: 칼로리의 가중치
  * expireWeight: 보관기간의 가중치
  * normalizeProjection: projection 표준화
  */
@@ -47,7 +47,7 @@ case class RecipeAlgorithmParams(
   seed: Option[Long],
   dimensions: Int,
   cooktimeWeight: Double,
-  amountWeight: Double,
+  caloriesWeight: Double,
   expireWeight: Double,
   normalizeProjection: Boolean
 ) extends Params
@@ -127,7 +127,8 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
       s"items in PreparedData cannot be empty." +
       " Please check if DataSource generates TrainingData" +
       " and Preprator generates PreparedData correctly.")
-    // create User and item's String ID to integer index BiMap
+
+    // User와 Item의 String ID를 integer index BiMap으로 생성
     val userStringIntMap = BiMap.stringInt(data.users.keys)
     val itemStringIntMap = BiMap.stringInt(data.items.keys)
 
@@ -137,15 +138,15 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
       data = data
     )
 
-    // MLLib ALS cannot handle empty training data.
+    // 만약 training data가 없으면 MLLib ALS 알고리즘을 수행할 수 없음
     require(!mllibRatings.take(1).isEmpty,
       s"mllibRatings cannot be empty." +
       " Please check if your events contain valid user and item ID.")
 
-    // seed for MLlib ALS
+    // MLlib ALS 알고리즘의 seed
     val seed = ap.seed.getOrElse(System.nanoTime)
 
-    // use ALS to train feature vectors
+    // featrure vector들을 training 하기 위해 ALS의 암묵적선호도 알고리즘을 사용함
     val m = ALS.trainImplicit(
       ratings = mllibRatings,
       rank = ap.rank,
@@ -157,15 +158,16 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
 
     val userFeatures = m.userFeatures.collectAsMap.toMap
 
-    // convert ID to Int index
+    // item String을 Int로 변환
     val items = data.items.map { case (id, item) =>
       (itemStringIntMap(id), item)
     }
 
-    // join item with the trained productFeatures
+    // item과 trained productFeature를 Mapping
     val productFeatures: Map[Int, (Item, Option[Array[Double]])] =
       items.leftOuterJoin(m.productFeatures).collectAsMap.toMap
 
+    // 유저 정보가 없을시 다른 유저의 view 이벤트와 like 이벤트를 기준으로 합산한 popular count를 training에 이용
     val popularCount = trainDefault(
       userStringIntMap = userStringIntMap,
       itemStringIntMap = itemStringIntMap,
@@ -177,7 +179,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
         val pm = RecipeModel(
           item = item,
           features = features,
-          // NOTE: use getOrElse because popularCount may not contain all items.
+          // NOTE: popularCount는 모든 아이템을 포함하지 않을 수 있으니 getOrElse를 사용함
           count = popularCount.getOrElse(index, 0)
         )
         (index, pm)
@@ -186,39 +188,31 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
 
 
 
-    /* ContentBasedModel */
+    /* Content Based Filtering */
     val itemIds = BiMap.stringInt(data.items.map(_._1))
 
-    /**
-     * Encode categorical vars
-     * We use here one-hot encoding
-     */
-
+    // categorical var을 one-hot encoding을 이용해 encoding함
     val categorical = Seq(encode(data.items.map(_._2.categories)),
       encode(data.items.map(_._2.feelings)))
 
     /**
-     * Transform numeric vars.
-     * In our case categorical attributes are binary encoded. Numeric vars are
-     * scaled and additional weights are given to them. These weights should be
-     * selected from some a-priory information, i.e. one should check how
-     * important year or duration for model quality and then assign weights
-     * accordingly
+     * numeric var를 변환함.
+     * categorical attribute들이 binary로 encoding되었기 때문에 numeric var를 
+     * binary로 scaling한 후 미리 설정한 가중치가 주어짐.
+     * 이 가중치는 feature별로 중요도에 따라 다르게 설정 가능함
      */
-
     val numericRow = data.items.map(x => Vectors.dense(x._2.cooktime, x._2
-      .amount,x._2.expire))
-    val weights = Array(ap.cooktimeWeight, ap.amountWeight, ap.expireWeight)
+      .calories,x._2.expire))
+    val weights = Array(ap.cooktimeWeight, ap.caloriesWeight, ap.expireWeight)
     val scaler = new StandardScaler(withMean = true,
       withStd = true).fit(numericRow)
     val numeric = numericRow.map(x => Vectors.dense(scaler.transform(x).
       toArray.zip(weights).map { case (x, w) => x * w }))
 
     /**
-     * Now we merge all data and normalize vectors so that they have unit norm
-     * and their dot product would yield cosine between vectors
+     * 모든 data를 병합한 후 표준화 함.
+     * 이를 통해 벡터간의 코사인 값을 구할 수 있음
      */
-
     val normalizer = new Normalizer(p = 2.0)
     val allData = normalizer.transform((categorical ++ Seq(numeric)).reduce(merge))
 
@@ -230,7 +224,10 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
      * case U matrix should be used
      */
 
-
+    /**
+     * SVD 는 row의 갯수가 많을 때 더 효율적으로 작동하므로 RDD를 transpose 할 필요가 있음.
+     * 일반적으로 
+     */
     val transposed = transposeRDD(allData)
 
     val mat: RowMatrix = new RowMatrix(transposed)
@@ -305,9 +302,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
     res
   }
 
-  /** Generate MLlibRating from PreparedData.
-    * You may customize this function if use different events or different aggregation method
-    */
+  /* Generate MLlibRating from PreparedData. */
   def genMLlibRating(
     userStringIntMap: BiMap[String, Int],
     itemStringIntMap: BiMap[String, Int],
@@ -335,7 +330,6 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
       }
       .reduceByKey(_ + _) // aggregate all view events of same user-item pair
 
-    // ADDED
     val mllibRatings2 = data.likeEvents
       .map { r =>
         // Convert user and item String IDs to Int index for MLlib
@@ -350,22 +344,22 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
           logger.info(s"Couldn't convert nonexistent item ID ${r.item}"
             + " to Int index.")
 
-        // MODIFIED, key is (uindex, iindex) tuple, value is (like, t) tuple
+        // key is (uindex, iindex) tuple, value is (like, t) tuple
         ((uindex, iindex), (r.like, r.t))
       }.filter { case ((u, i), v) =>
-        //val  = d
+        // val  = d
         // keep events with valid user and item index
         (u != -1) && (i != -1)
-      }.reduceByKey { case (v1, v2) => // MODIFIED
+      }.reduceByKey { case (v1, v2) => 
         // An user may like an item and change to cancel_like it later,
         // or vice versa. Use the latest value for this case.
         val (like1, t1) = v1
         val (like2, t2) = v2
         // keep the latest value
         if (t1 > t2) v1 else v2
-      }.map { case ((u, i), (like, t)) => // MODIFIED
+      }.map { case ((u, i), (like, t)) => 
         // We use ALS.trainImplicit()
-        val r = if (like) 5 else 0  // MODIFIED, the rating of "like" event is 5, "cancel_like" event is 0
+        val r = if (like) 5 else 0  // the rating of "like" event is 5, "cancel_like" event is 0
         ((u, i), r)
       }
 
@@ -380,7 +374,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
   }
 
   /** 
-   * MODIFIED, add all likes and views of each items for scoring.
+   * Add all likes and views of each items for scoring.
    * This is for Default Prediction when know nothing about the user.
    */
   def trainDefault(
@@ -388,7 +382,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
     itemStringIntMap: BiMap[String, Int],
     data: PreparedData): Map[Int, Int] = {
     
-    // MODIFIED, count number of likes
+    // count number of likes
     // (item index, count)
     val likeCountsRDD: RDD[(Int, Int)] = data.likeEvents
       .map { r =>
@@ -404,20 +398,20 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
           logger.info(s"Couldn't convert nonexistent item ID ${r.item}"
             + " to Int index.")
 
-        // MODIFIED, key is (uindex, iindex) tuple, value is (like, t) tuple
+        // key is (uindex, iindex) tuple, value is (like, t) tuple
         ((uindex, iindex), (r.like, r.t))
       }
       .filter { case ((u, i), v) =>
-        // MODIFIED, keep events with valid user and item index
+        // keep events with valid user and item index
         (u != -1) && (i != -1)
       }
       .map { case ((u, i), (like, t)) => 
         if (like) (i, 5) else (i, -5) // like: 5, cancel_like: -5
-      } // MODIFIED, key is item
+      } // key is item
       .reduceByKey(_ + _) // aggregate all like events of same user-item pair
 
 
-    // MODIFIED, count number of views
+    // count number of views
     // (item index, count)
     val viewCountsRDD: RDD[(Int, Int)] = data.viewEvents
       .map { r =>
@@ -433,15 +427,15 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
           logger.info(s"Couldn't convert nonexistent item ID ${r.item}"
             + " to Int index.")
 
-        ((uindex, iindex), 1)
+        ((uindex, iindex), 1) // view: 1
       }
       .filter { case ((u, i), v) =>
-        // MODIFIED, keep events with valid user and item index
+        // keep events with valid user and item index
         (u != -1) && (i != -1)
       }
       .map { case ((u, i), v) => 
         (i, v);
-      } // MODIFIED, key is item
+      } // key is item
       .reduceByKey(_ + _) // aggregate all view events of same user-item pair
     
     // aggregate all like and view events of same user-item pair
@@ -529,11 +523,8 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
     /**
      * Here we compute similarity to group of items in very simple manner
      * We just take top scored items for all query items
-
-     * It is possible to use other grouping functions instead of max
      */
-    
-    val recentItems: Set[String] = getRecentItems(query) // ADDED
+    val recentItems: Set[String] = getRecentItems(query) 
 
     logger.info(recentItems) // test
 
@@ -553,7 +544,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
     if(result.isEmpty) logger.info(s"The user has no recent action.")
 
 
-    val combinedResult = itemScores.union(result)
+    val combinedResult = itemScores.union(result) // Collaborative Filtering 결과값과 Content Based 결과값을 합침
 
     PredictedResult(combinedResult)
   }
@@ -640,7 +631,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
         entityId = query.user,
         eventNames = Some(ap.similarEvents),
         targetEntityType = Some(Some("item")),
-        limit = Some(10),
+        limit = Some(10), // Default: 10 items
         latest = true,
         // set time limit to avoid super long DB access
         timeout = Duration(200, "millis")
@@ -732,7 +723,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
     topScores
   }
 
-  /** Return top similar items based on items user recently has action on */
+  /** Return top similar items based on items user recently has action on (Default: 10 recent action)*/
   def predictSimilar(
     recentFeatures: Set[Array[Double]],
     recipeModels: Map[Int, RecipeModel],
@@ -825,23 +816,19 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
     whiteList: Option[Set[Int]],
     blackList: Set[Int]
   ): Boolean = {
-    // can add other custom filtering here
+    // whiteList와 blackList 필터링
     whiteList.map(_.contains(i)).getOrElse(true) &&
     !blackList.contains(i) &&
-    // filter categories
+    // categories 필터링
     categories.map { cat =>
       item.categories.toList.headOption.map { itemCat =>
-        // keep this item if has overlap categories with the query
+        // 쿼리의 categories와 겹치면 이 item을 keep
         !(itemCat.toSet.intersect(cat.toSet[Any]).isEmpty)
-      }.getOrElse(false) // discard this item if it has no categories
+      }.getOrElse(false) // 만약 category가 없으면 item을 버림
     }.getOrElse(true)
 
   }
 
-
-
-
-  /* Content Based Filtering */
   private def encode(data: RDD[Array[String]]): RDD[Vector] = {
     val dict = BiMap.stringLong(data.flatMap(x => x))
     val len = dict.size
@@ -852,8 +839,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
     }
   }
 
-  // [X: ClassTag] - trick to have multiple definitions of encode, they both
-  // for RDD[_]
+  // [X: ClassTag] - 다른 input의 encode 정의를 위한 trick
   private def encode[X: ClassTag](data: RDD[String]): RDD[Vector] = {
     val dict = BiMap.stringLong(data)
     val len = dict.size
@@ -875,7 +861,6 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
           .length).map(_ + leftSz), leftVals ++ rightVals)
     }
   }
-
 
   private def transposeRDD(data: RDD[Vector]) = {
     val len = data.count().toInt
@@ -902,5 +887,4 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
 
     transposed
   }
-
 }

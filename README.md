@@ -88,7 +88,7 @@ def send_event(client):
         "categories" : "c3",
         "feelings" : ["f3", "f5"],
         "cooktime" : 30,
-        "amount" : 250,
+        "calories" : 250,
         "expire" : 14
       }
     )

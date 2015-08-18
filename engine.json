@@ -21,7 +21,7 @@
         "seed": 3,
         "dimensions": 50,
         "cooktimeWeight": 1.0,
-        "amountWeight": 2.0,
+        "caloriesWeight": 2.0,
         "expireWeight": 0.5,
         "normalizeProjection": true
       }
