@@ -13,10 +13,12 @@ class Serving
   def serve(query: Query,
     predictedResults: Seq[PredictedResult]): PredictedResult = {
 
-    val combined = predictedResults.map(_.itemScores).flatten // Array of ItemScore
-      .groupBy(_.item) // groupBy item id
+    // 같은 item에 대해 Collaborative Filtering Recommender의 결과값과 
+    // Content Based Filtering Recommender의 결과값을 합산, 정렬함
+    val combined = predictedResults.map(_.itemScores).flatten // ItemScore 배열
+      .groupBy(_.item) // 같은 item id끼리 묶음
       .mapValues(itemScores => itemScores.map(_.score).reduce(_ + _))
-      .toArray // array of (item id, score)
+      .toArray // (item id, score) 배열
       .sortBy(_._2)(Ordering.Double.reverse)
       .take(query.num)
       .map { case (k,v) => ItemScore(k, v) }

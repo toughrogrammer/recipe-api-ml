@@ -22,19 +22,19 @@ import scala.concurrent.ExecutionContext.Implicits.global
 
 /**
  * --알고리즘 초기설정 파라미터--
- * appName: 
- * unseenOnly:
- * sennEvents:
- * similarEvents:
- * rank:
- * numIterations:
- * lambda:
- * seed:
- * dimension:
- * cooktimeWeight:
- * amountWeight:
- * expireWeight:
- * normalizeProjection:
+ * appName: predictionIO 앱 이름
+ * unseenOnly: unseen 이벤트만 보여줌
+ * seenEvents: 유저가 본 이벤트의 user-to-item 리스트, unseenOnly가 true일 때 쓰임
+ * similarEvents: 비슷한 이벤트의 user-item-item 리스트, 유저가 최근에 본 item과 비슷한 item을 찾을 때 쓰임
+ * rank: MLlib ALS 알고리즘의 파라미터. Number of latent feature.
+ * numIterations: MLlib ALS 알고리즘의 파라미터. Number of iterations.
+ * lambda: MLlib ALS 알고리즘의 정규화 파라미터
+ * seed: MLlib ALS 알고리즘의 random seed. (Optional)
+ * dimension: 벡터화 된 아이템의 차원 수
+ * cooktimeWeight: 조리시간의 가중치
+ * amountWeight: 칼로리의 가중치
+ * expireWeight: 보관기간의 가중치
+ * normalizeProjection: projection 표준화
  */
 case class RecipeAlgorithmParams(
   appName: String,
@@ -54,9 +54,9 @@ case class RecipeAlgorithmParams(
 
 /**
  * --레시피 모델--
- * item:
- * features:
- * count:
+ * item: 레시피
+ * features: ALS 알고리즘으로 계산된 score
+ * count: similar product가 없을 때 trainDefault()에 의해 반환된 popular count score
  */
 case class RecipeModel(
   item: Item,
@@ -66,13 +66,13 @@ case class RecipeModel(
 
 /**
  * --레시피 알고리즘 모델--
- * rank:
- * userFreatures:
- * recipeModels:
- * userStringIntMap:
- * itemStringIntMap:
- * itemIds:
- * projection:
+ * rank: MLlib ALS 알고리즘의 파라미터. Number of latent feature.
+ * userFreatures: 유저의 최근 행동 기록
+ * recipeModels: 레시피 모델(item, features, count)
+ * userStringIntMap: 유저String을 Int로 Mapping
+ * itemStringIntMap: 아이템String을 Int로 Mapping
+ * itemIds: 아이템id
+ * projection: projection 매트릭스
  */
 class RecipeAlgorithmModel(
   val rank: Int,
@@ -102,7 +102,7 @@ class RecipeAlgorithmModel(
 
 /**
  * --레시피 알고리즘--
- * 
+ * Collaborative Filtering과 Content Based Filtering방식을 독립적으로 시행한 뒤 score를 합산함
  */
 class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
   extends P2LAlgorithm[PreparedData, RecipeAlgorithmModel, Query, PredictedResult] {
@@ -110,6 +110,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
   @transient lazy val logger = Logger[this.type]
 
   def train(sc: SparkContext, data: PreparedData): RecipeAlgorithmModel = {
+    /* Collaborative Filtering */
     require(!data.viewEvents.take(1).isEmpty,
       s"viewEvents in PreparedData cannot be empty." +
       " Please check if DataSource generates TrainingData" +
@@ -450,7 +451,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
   }
 
   def predict(model: RecipeAlgorithmModel, query: Query): PredictedResult = {
-
+    /* Collaborative Filtering */
     val userFeatures = model.userFeatures
     val recipeModels = model.recipeModels
 
@@ -524,7 +525,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
 
 
 
-    /* ContentBasedFiltering */
+    /* Content Based Filtering */
     /**
      * Here we compute similarity to group of items in very simple manner
      * We just take top scored items for all query items
@@ -840,7 +841,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
 
 
 
-  /* ContentBasedFiltering */
+  /* Content Based Filtering */
   private def encode(data: RDD[Array[String]]): RDD[Vector] = {
     val dict = BiMap.stringLong(data.flatMap(x => x))
     val len = dict.size

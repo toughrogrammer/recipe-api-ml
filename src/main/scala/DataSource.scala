@@ -82,7 +82,7 @@ class DataSource(val dsp: DataSourceParams)
       targetEntityType = Some(Some("item")))(sc)
       .cache()
 
-    // view이벤트: 레시피 클릭
+    // view이벤트 필터: 레시피 클릭
     val viewEventsRDD: RDD[ViewEvent] = eventsRDD
       .filter { event => event.event == "view" }
       .map { event =>
@@ -100,7 +100,7 @@ class DataSource(val dsp: DataSourceParams)
         }
       }
 
-    // like, cancel_like 이벤트: 레시피 좋아요 버튼 클릭 및 클릭 해제
+    // like, cancel_like 이벤트 필터: 레시피 좋아요 버튼 클릭 및 클릭 해제
     val likeEventsRDD: RDD[LikeEvent] = eventsRDD
       .filter { event => event.event == "like" | event.event == "cancel_like"}  // MODIFIED
       .map { event =>

@@ -2,25 +2,36 @@
 
 ## 설명
 
-PredictionIO의 'E-Commerce Recommendation Engine Template'과 'Similar Product Engine Template'을 결합, 수정, 보완하여 완성한 추천 알고리즘 엔진입니다.
+PredictionIO의 'E-Commerce Recommendation Engine Template'과 'Similar Product Engine Template'을 결합, 수정, 보완하여 구현한 Collaborative Filtering Algorithm과
+이를 보완하기 위해 저희가 구현한 Content Based Filtering Algorithm을 유기적으로 합친 Recommender입니다.
+
 
 이 엔진은 다음과 같은 기능들을 제공합니다.
+Collaborative Filtering Algorithm과 Content Based Filtering Algorithm은 독립적으로 수행되는것이 아니라, 하나의 쿼리에 두 알고리즘이 동시에 수행됩니다. 그리고 이렇게 해서 나온 각각의 결과값을 자동으로 합산하여 나온 최종 결과값을 반환하게 됩니다.
 
-* 기존 유저의 최근 행동을 분석하여 비슷한(선호할만한) 아이템을 추천
-* 기존 유저에게 비슷한 아이템이 없을 경우 대중적으로 인기있는 아이템을 추천
+
+### Collaborative Filtering Recommender
+
+* 기존 유저의 최근 행동 패턴을 기반으로 비슷한(선호할만한) 아이템을 추천
+* 기존 유저의 행동 패턴과 비슷한 아이템이 없을 경우 대중적으로 인기있는 아이템을 추천
 * 새로운 유저에게는 대중적으로 인기있는 아이템을 추천
 * 보지 않은 아이템만 추천할 수 있음 (optional)
 * 카테고리, 화이트리스트, 블랙리스트 필터링 가능 (optional)
 * 아이템을 일시 접근불가 설정 가능 (optional)
 
+### Content Based Filtering Recommender
+
+* 기존 유저가 최근 'view' 또는 'like'를 한 아이템의 attributes와 비슷한 아이템을 추천
+
+
 ## 사용법
 
 ### Event Data Requirements
 
+* Item $set event, which sets the attributes of the item
 * Users' view events
 * Users' like events
 * Users' cancel_like events
-* Items' with categories properties
 * Constraint unavailable set events
 
 ### Input Query
@@ -69,6 +80,20 @@ def send_event(client):
   )
 
   client.create_event(
+      event="$set",
+      entity_type="item",
+      entity_id="i1",
+      properties={
+        "title" : "t1",
+        "categories" : "c3",
+        "feelings" : ["f3", "f5"],
+        "cooktime" : 30,
+        "amount" : 250,
+        "expire" : 14
+      }
+    )
+
+  client.create_event(
     event="$set",
     entity_type="constraint",
     entity_id="unavailableItems",
@@ -82,7 +107,7 @@ def send_event(client):
     entity_type="user",
     entity_id="u7",
     target_entity_type="item",
-    target_entity_id="i80"
+    target_entity_id="i1"
   )
 
   client.create_event(
@@ -90,7 +115,7 @@ def send_event(client):
     entity_type="user",
     entity_id="u7",
     target_entity_type="item",
-    target_entity_id="i80"
+    target_entity_id="i1"
   )
 
   client.create_event(
@@ -98,7 +123,7 @@ def send_event(client):
     entity_type="user",
     entity_id="u8",
     target_entity_type="item",
-    target_entity_id="i80"
+    target_entity_id="i1"
   )
 
   print "Complete"
