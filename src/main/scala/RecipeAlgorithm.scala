@@ -1,27 +1,42 @@
 package com.recipe
 
-import io.prediction.controller.P2LAlgorithm
-import io.prediction.controller.Params
-import io.prediction.data.storage.BiMap
-import io.prediction.data.storage.Event
+import io.prediction.controller.{P2LAlgorithm, Params}
+import io.prediction.data.storage.{BiMap, Event}
 import io.prediction.data.store.LEventStore
 
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext._
 import org.apache.spark.mllib.recommendation.ALS
 import org.apache.spark.mllib.recommendation.{Rating => MLlibRating}
-import org.apache.spark.mllib.linalg.DenseMatrix
-import org.apache.spark.mllib.linalg.DenseVector
+import org.apache.spark.mllib.feature.{Normalizer, StandardScaler}
+import org.apache.spark.mllib.linalg.distributed.RowMatrix
+import org.apache.spark.mllib.linalg._
 import org.apache.spark.rdd.RDD
 
 import grizzled.slf4j.Logger
 
+import scala.reflect.ClassTag
 import scala.collection.mutable.PriorityQueue
 import scala.concurrent.duration.Duration
 import scala.concurrent.ExecutionContext.Implicits.global
 
-
-case class CollaborativeAlgorithmParams(
+/**
+ * --알고리즘 초기설정 파라미터--
+ * appName: 
+ * unseenOnly:
+ * sennEvents:
+ * similarEvents:
+ * rank:
+ * numIterations:
+ * lambda:
+ * seed:
+ * dimension:
+ * cooktimeWeight:
+ * amountWeight:
+ * expireWeight:
+ * normalizeProjection:
+ */
+case class RecipeAlgorithmParams(
   appName: String,
   unseenOnly: Boolean,
   seenEvents: List[String],
@@ -37,16 +52,32 @@ case class CollaborativeAlgorithmParams(
   normalizeProjection: Boolean
 ) extends Params
 
-case class ProductModel(
+/**
+ * --레시피 모델--
+ * item:
+ * features:
+ * count:
+ */
+case class RecipeModel(
   item: Item,
   features: Option[Array[Double]], // features by ALS
   count: Int // popular count for default score
 )
 
-class CollaborativeModel(
+/**
+ * --레시피 알고리즘 모델--
+ * rank:
+ * userFreatures:
+ * recipeModels:
+ * userStringIntMap:
+ * itemStringIntMap:
+ * itemIds:
+ * projection:
+ */
+class RecipeAlgorithmModel(
   val rank: Int,
   val userFeatures: Map[Int, Array[Double]],
-  val productModels: Map[Int, ProductModel],
+  val recipeModels: Map[Int, RecipeModel],
   val userStringIntMap: BiMap[String, Int],
   val itemStringIntMap: BiMap[String, Int],
   val itemIds: BiMap[String, Int], 
@@ -59,21 +90,26 @@ class CollaborativeModel(
     s" rank: ${rank}" +
     s" userFeatures: [${userFeatures.size}]" +
     s"(${userFeatures.take(2).toList}...)" +
-    s" productModels: [${productModels.size}]" +
-    s"(${productModels.take(2).toList}...)" +
+    s" recipeModels: [${recipeModels.size}]" +
+    s"(${recipeModels.take(2).toList}...)" +
     s" userStringIntMap: [${userStringIntMap.size}]" +
     s"(${userStringIntMap.take(2).toString}...)]" +
     s" itemStringIntMap: [${itemStringIntMap.size}]" +
-    s"(${itemStringIntMap.take(2).toString}...)]"
+    s"(${itemStringIntMap.take(2).toString}...)]" +
+    s"Items: ${itemIds.size}"
   }
 }
 
-class CollaborativeAlgorithm(val ap: CollaborativeAlgorithmParams)
-  extends P2LAlgorithm[PreparedData, CollaborativeModel, Query, PredictedResult] {
+/**
+ * --레시피 알고리즘--
+ * 
+ */
+class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
+  extends P2LAlgorithm[PreparedData, RecipeAlgorithmModel, Query, PredictedResult] {
 
   @transient lazy val logger = Logger[this.type]
 
-  def train(sc: SparkContext, data: PreparedData): CollaborativeModel = {
+  def train(sc: SparkContext, data: PreparedData): RecipeAlgorithmModel = {
     require(!data.viewEvents.take(1).isEmpty,
       s"viewEvents in PreparedData cannot be empty." +
       " Please check if DataSource generates TrainingData" +
@@ -135,9 +171,9 @@ class CollaborativeAlgorithm(val ap: CollaborativeAlgorithmParams)
       data = data
     )
 
-    val productModels: Map[Int, ProductModel] = productFeatures
+    val recipeModels: Map[Int, RecipeModel] = productFeatures
       .map { case (index, (item, features)) =>
-        val pm = ProductModel(
+        val pm = RecipeModel(
           item = item,
           features = features,
           // NOTE: use getOrElse because popularCount may not contain all items.
@@ -146,15 +182,126 @@ class CollaborativeAlgorithm(val ap: CollaborativeAlgorithmParams)
         (index, pm)
       }
 
-    new CollaborativeModel(
+
+
+
+    /* ContentBasedModel */
+    val itemIds = BiMap.stringInt(data.items.map(_._1))
+
+    /**
+     * Encode categorical vars
+     * We use here one-hot encoding
+     */
+
+    val categorical = Seq(encode(data.items.map(_._2.categories)),
+      encode(data.items.map(_._2.feelings)))
+
+    /**
+     * Transform numeric vars.
+     * In our case categorical attributes are binary encoded. Numeric vars are
+     * scaled and additional weights are given to them. These weights should be
+     * selected from some a-priory information, i.e. one should check how
+     * important year or duration for model quality and then assign weights
+     * accordingly
+     */
+
+    val numericRow = data.items.map(x => Vectors.dense(x._2.cooktime, x._2
+      .amount,x._2.expire))
+    val weights = Array(ap.cooktimeWeight, ap.amountWeight, ap.expireWeight)
+    val scaler = new StandardScaler(withMean = true,
+      withStd = true).fit(numericRow)
+    val numeric = numericRow.map(x => Vectors.dense(scaler.transform(x).
+      toArray.zip(weights).map { case (x, w) => x * w }))
+
+    /**
+     * Now we merge all data and normalize vectors so that they have unit norm
+     * and their dot product would yield cosine between vectors
+     */
+
+    val normalizer = new Normalizer(p = 2.0)
+    val allData = normalizer.transform((categorical ++ Seq(numeric)).reduce(merge))
+
+    /**
+     * Now we need to transpose RDD because SVD better works with ncol << nrow
+     * and it's often the case when number of binary attributes is much greater
+     * then the number of items. But in the case when the number of items is
+     * more than number of attributes it is better not to transpose. In such
+     * case U matrix should be used
+     */
+
+
+    val transposed = transposeRDD(allData)
+
+    val mat: RowMatrix = new RowMatrix(transposed)
+
+    // Make SVD to reduce data dimensionality
+    val svd: SingularValueDecomposition[RowMatrix, Matrix] = mat.computeSVD(
+      ap.dimensions, computeU = false)
+
+    val V: DenseMatrix = new DenseMatrix(svd.V.numRows, svd.V.numCols,
+      svd.V.toArray)
+
+    val projection = Matrices.diag(svd.s).multiply(V.transpose)
+
+/*
+    // This is an alternative code for the case when data matrix is not
+    // transposed (when the number of items is much bigger then the number
+    // of binary attributes
+
+    val mat: RowMatrix = new RowMatrix(allData)
+
+    val svd: SingularValueDecomposition[RowMatrix, Matrix] = mat.computeSVD(
+      ap.dimensions, computeU = true)
+
+    val U: DenseMatrix = new DenseMatrix(svd.U.numRows.toInt, svd.U.numCols
+      .toInt, svd.U.rows.flatMap(_.toArray).collect(), isTransposed = true)
+
+    val projection = Matrices.diag(svd.s).multiply(U.transpose)
+*/
+
+    svd.s.toArray.zipWithIndex.foreach { case (x, y) =>
+      logger.info(s"Singular value #$y = $x") }
+
+    val maxRank = Seq(mat.numCols(), mat.numRows()).min
+    val total = svd.s.toArray.map(x => x * x).reduce(_ + _)
+    val worstLeft = svd.s.toArray.last * svd.s.toArray.last * (maxRank - svd.s.size)
+    val variabilityGrasped = 100 * total / (total + worstLeft)
+
+    logger.info(s"Worst case variability grasped: $variabilityGrasped%")
+
+    val res = if(ap.normalizeProjection) {
+      val sequentionalizedProjection = for (j <- 0 until projection.numCols)
+        yield Vectors.dense((for (i <- 0 until projection.numRows) yield
+        projection(i, j)).toArray)
+
+      val normalizedProjectionSeq = sequentionalizedProjection.map(x =>
+        normalizer.transform(x))
+
+      val normalizedProjection = new DenseMatrix(projection.numRows, projection
+        .numCols, normalizedProjectionSeq.flatMap(x => x.toArray).toArray)
+
+      new RecipeAlgorithmModel(
       rank = m.rank,
       userFeatures = userFeatures,
-      productModels = productModels,
+      recipeModels = recipeModels,
       userStringIntMap = userStringIntMap,
       itemStringIntMap = itemStringIntMap,
-      itemIds = null,
-      projection = null
-    )
+      itemIds = itemIds,
+      projection = normalizedProjection
+      )
+    } else {
+      new RecipeAlgorithmModel(
+      rank = m.rank,
+      userFeatures = userFeatures,
+      recipeModels = recipeModels,
+      userStringIntMap = userStringIntMap,
+      itemStringIntMap = itemStringIntMap,
+      itemIds = itemIds,
+      projection = projection
+      )
+    }
+
+    res
   }
 
   /** Generate MLlibRating from PreparedData.
@@ -302,11 +449,10 @@ class CollaborativeAlgorithm(val ap: CollaborativeAlgorithmParams)
     sumOfAll.collectAsMap.toMap
   }
 
-
-  def predict(model: CollaborativeModel, query: Query): PredictedResult = {
+  def predict(model: RecipeAlgorithmModel, query: Query): PredictedResult = {
 
     val userFeatures = model.userFeatures
-    val productModels = model.productModels
+    val recipeModels = model.recipeModels
 
     // convert whiteList's string ID to integer index
     val whiteList: Option[Set[Int]] = query.whiteList.map( set =>
@@ -326,7 +472,7 @@ class CollaborativeAlgorithm(val ap: CollaborativeAlgorithmParams)
       // the user has feature vector
       predictKnownUser(
         userFeature = userFeature.get,
-        productModels = productModels,
+        recipeModels = recipeModels,
         query = query,
         whiteList = whiteList,
         blackList = finalBlackList
@@ -341,16 +487,16 @@ class CollaborativeAlgorithm(val ap: CollaborativeAlgorithmParams)
       val recentList: Set[Int] = recentItems.flatMap (x =>
         model.itemStringIntMap.get(x))
 
-      val recentFeatures: Vector[Array[Double]] = recentList.toVector
-        // productModels may not contain the requested item
+      val recentFeatures: Set[Array[Double]] = recentList
+        // recipeModels may not contain the requested item
         .map { i =>
-          productModels.get(i).flatMap { pm => pm.features }
+          recipeModels.get(i).flatMap { pm => pm.features }
         }.flatten
 
       if (recentFeatures.isEmpty) {
-        logger.info(s"No features vector for recent items ${recentItems}.")
+        logger.info(s"No features set for recent items ${recentItems}.")
         predictDefault(
-          productModels = productModels,
+          recipeModels = recipeModels,
           query = query,
           whiteList = whiteList,
           blackList = finalBlackList
@@ -358,7 +504,7 @@ class CollaborativeAlgorithm(val ap: CollaborativeAlgorithmParams)
       } else {
         predictSimilar(
           recentFeatures = recentFeatures,
-          productModels = productModels,
+          recipeModels = recipeModels,
           query = query,
           whiteList = whiteList,
           blackList = finalBlackList
@@ -374,14 +520,21 @@ class CollaborativeAlgorithm(val ap: CollaborativeAlgorithmParams)
       )
     }
 
-    //new PredictedResult(itemScores)
 
 
 
 
+    /* ContentBasedFiltering */
+    /**
+     * Here we compute similarity to group of items in very simple manner
+     * We just take top scored items for all query items
+
+     * It is possible to use other grouping functions instead of max
+     */
+    
     val recentItems: Set[String] = getRecentItems(query) // ADDED
 
-    logger.info(recentItems)
+    logger.info(recentItems) // test
 
     val result = recentItems.flatMap { itemId =>
       model.itemIds.get(itemId).map { j =>
@@ -399,9 +552,9 @@ class CollaborativeAlgorithm(val ap: CollaborativeAlgorithmParams)
     if(result.isEmpty) logger.info(s"The user has no recent action.")
 
 
-    val mergedResult = itemScores.union(result)
+    val combinedResult = itemScores.union(result)
 
-    new PredictedResult(itemScores)
+    PredictedResult(combinedResult)
   }
 
   /** Generate final blackList based on other constraints */
@@ -518,12 +671,12 @@ class CollaborativeAlgorithm(val ap: CollaborativeAlgorithmParams)
   /** Prediction for user with known feature vector */
   def predictKnownUser(
     userFeature: Array[Double],
-    productModels: Map[Int, ProductModel],
+    recipeModels: Map[Int, RecipeModel],
     query: Query,
     whiteList: Option[Set[Int]],
     blackList: Set[Int]
   ): Array[(Int, Double)] = {
-    val indexScores: Map[Int, Double] = productModels.par // convert to parallel collection
+    val indexScores: Map[Int, Double] = recipeModels.par // convert to parallel collection
       .filter { case (i, pm) =>
         pm.features.isDefined &&
         isCandidateItem(
@@ -551,12 +704,12 @@ class CollaborativeAlgorithm(val ap: CollaborativeAlgorithmParams)
 
   /** Default prediction when know nothing about the user */
   def predictDefault(
-    productModels: Map[Int, ProductModel],
+    recipeModels: Map[Int, RecipeModel],
     query: Query,
     whiteList: Option[Set[Int]],
     blackList: Set[Int]
   ): Array[(Int, Double)] = {
-    val indexScores: Map[Int, Double] = productModels.par // convert back to sequential collection
+    val indexScores: Map[Int, Double] = recipeModels.par // convert back to sequential collection
       .filter { case (i, pm) =>
         isCandidateItem(
           i = i,
@@ -580,13 +733,13 @@ class CollaborativeAlgorithm(val ap: CollaborativeAlgorithmParams)
 
   /** Return top similar items based on items user recently has action on */
   def predictSimilar(
-    recentFeatures: Vector[Array[Double]],
-    productModels: Map[Int, ProductModel],
+    recentFeatures: Set[Array[Double]],
+    recipeModels: Map[Int, RecipeModel],
     query: Query,
     whiteList: Option[Set[Int]],
     blackList: Set[Int]
   ): Array[(Int, Double)] = {
-    val indexScores: Map[Int, Double] = productModels.par // convert to parallel collection
+    val indexScores: Map[Int, Double] = recipeModels.par // convert to parallel collection
       .filter { case (i, pm) =>
         pm.features.isDefined &&
         isCandidateItem(
@@ -682,6 +835,71 @@ class CollaborativeAlgorithm(val ap: CollaborativeAlgorithmParams)
       }.getOrElse(false) // discard this item if it has no categories
     }.getOrElse(true)
 
+  }
+
+
+
+
+  /* ContentBasedFiltering */
+  private def encode(data: RDD[Array[String]]): RDD[Vector] = {
+    val dict = BiMap.stringLong(data.flatMap(x => x))
+    val len = dict.size
+
+    data.map { sample =>
+      val indexes = sample.map(dict(_).toInt).sorted
+      Vectors.sparse(len, indexes, Array.fill[Double](indexes.length)(1.0))
+    }
+  }
+
+  // [X: ClassTag] - trick to have multiple definitions of encode, they both
+  // for RDD[_]
+  private def encode[X: ClassTag](data: RDD[String]): RDD[Vector] = {
+    val dict = BiMap.stringLong(data)
+    val len = dict.size
+
+    data.map { sample =>
+      val index = dict(sample).toInt
+      Vectors.sparse(len, Array(index), Array(1.0))
+    }
+  }
+
+  private def merge(v1: RDD[Vector], v2: RDD[Vector]): RDD[Vector] = {
+    v1.zip(v2) map {
+      case (SparseVector(leftSz, leftInd, leftVals), SparseVector(rightSz,
+      rightInd, rightVals)) =>
+        Vectors.sparse(leftSz + rightSz, leftInd ++ rightInd.map(_ + leftSz),
+          leftVals ++ rightVals)
+      case (SparseVector(leftSz, leftInd, leftVals), DenseVector(rightVals)) =>
+        Vectors.sparse(leftSz + rightVals.length, leftInd ++ (0 until rightVals
+          .length).map(_ + leftSz), leftVals ++ rightVals)
+    }
+  }
+
+
+  private def transposeRDD(data: RDD[Vector]) = {
+    val len = data.count().toInt
+
+    val byColumnAndRow = data.zipWithIndex().flatMap {
+      case (rowVector, rowIndex) => { rowVector match {
+        case SparseVector(_, columnIndices, values) =>
+          values.zip(columnIndices)
+        case DenseVector(values) =>
+          values.zipWithIndex
+      }} map {
+        case(v, columnIndex) => columnIndex -> (rowIndex, v)
+      }
+    }
+
+    val byColumn = byColumnAndRow.groupByKey().sortByKey().values
+
+    val transposed = byColumn.map {
+      indexedRow =>
+        val all = indexedRow.toArray.sortBy(_._1)
+        val significant = all.filter(_._2 != 0)
+        Vectors.sparse(len, significant.map(_._1.toInt), significant.map(_._2))
+    }
+
+    transposed
   }
 
 }
