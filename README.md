@@ -131,8 +131,8 @@ def send_event(client):
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(
-    description="Import sample data for e-commerce recommendation engine")
-  parser.add_argument('--access_key', default='SGjdQqdg3dKfoLtRrtePkSe2yQzCXcpuqSdwGbdHSTj0770tfHNhQ0NV5KCJ5nu3')
+    description="Import sample data for Recipe Recommendation Engine")
+  parser.add_argument('--access_key', default='<Your Access Key>')
   parser.add_argument('--url', default="http://localhost:7070")
 
   args = parser.parse_args()
