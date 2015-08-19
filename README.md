@@ -71,15 +71,6 @@ def send_event(client):
   )
 
   client.create_event(
-    event="$set",
-    entity_type="item",
-    entity_id="i101",
-    properties={
-      "categories" : "c3"
-    }
-  )
-
-  client.create_event(
       event="$set",
       entity_type="item",
       entity_id="i1",
@@ -121,7 +112,7 @@ def send_event(client):
   client.create_event(
     event="cancel_like",
     entity_type="user",
-    entity_id="u8",
+    entity_id="u7",
     target_entity_type="item",
     target_entity_id="i1"
   )

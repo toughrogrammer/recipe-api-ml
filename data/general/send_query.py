@@ -3,12 +3,12 @@ Send sample query to prediction engine
 """
 
 import predictionio
-engine_client = predictionio.EngineClient(url="http://191.239.96.178:40003")
+engine_client = predictionio.EngineClient(url="http://localhost:8000")
 
 print "Sending query..."
 
 for i in range(1, 22):
-  print "User: " + str(i)
+  print "User: " + "u" + str(i)
   print engine_client.send_query(
     {
       "user": "u" + str(i), 

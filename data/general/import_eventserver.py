@@ -34,9 +34,9 @@ def import_events(client):
     categories = random.sample(sampleCategories, 1)
     feelings = random.sample(sampleFeelings, random.randint(1, 3))
     cooktime = random.randint(10, 50)
-    amount = random.randint(100, 700)
+    calories = random.randint(100, 700)
     expire = random.randint(1, 15)
-    print "Set item", item_id, "= title:", title, ", category:", categories, ", feelings:", feelings, ", cooktime:", cooktime, ", amount: ", amount, ", expire: ", expire
+    print "Set item", item_id, "= title:", title, ", category:", categories, ", feelings:", feelings, ", cooktime:", cooktime, ", calories: ", calories, ", expire: ", expire
     client.create_event(
       event="$set",
       entity_type="item",
@@ -46,7 +46,7 @@ def import_events(client):
         "categories" : categories,
         "feelings" : feelings,
         "cooktime" : cooktime,
-        "amount" : amount,
+        "calories" : calories,
         "expire" : expire
       }
     )
