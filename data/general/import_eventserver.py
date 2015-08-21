@@ -44,9 +44,7 @@ def import_events(client):
       properties={
         "title" : title,
         "categories" : categories,
-        "categories2" : categories,
         "feelings" : feelings,
-        "feelings2" : feelings,
         "cooktime" : cooktime,
         "calories" : calories,
         "expire" : expire

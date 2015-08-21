@@ -16,12 +16,15 @@ Collaborative Filtering Algorithm과 Content Based Filtering Algorithm은 독립
 * 기존 유저의 행동 패턴과 비슷한 아이템이 없을 경우 대중적으로 인기있는 아이템을 추천
 * 새로운 유저에게는 대중적으로 인기있는 아이템을 추천
 * 보지 않은 아이템만 추천할 수 있음 (optional)
-* 카테고리, 화이트리스트, 블랙리스트 필터링 가능 (optional)
+* 카테고리, 식감, 화이트리스트, 블랙리스트 필터링 가능 (optional)
 * 아이템을 일시 접근불가 설정 가능 (optional)
 
 ### Content Based Filtering Recommender
 
 * 기존 유저가 최근 'view' 또는 'like'를 한 아이템의 attributes와 비슷한 아이템을 추천
+* 보지 않은 아이템만 추천할 수 있음 (optional)
+* 카테고리, 식감, 화이트리스트, 블랙리스트 필터링 가능 (optional)
+* 아이템을 일시 접근불가 설정 가능 (optional)
 
 
 ## 사용법
@@ -39,6 +42,7 @@ Collaborative Filtering Algorithm과 Content Based Filtering Algorithm은 독립
 * UserID
 * Num of items to be recommended
 * List of white-listed item categories (optional)
+* List of white-listed item feelings (optional)
 * List of white-listed itemIDs (optional)
 * List of black-listed itemIDs (optional)
 
@@ -160,6 +164,7 @@ print engine_client.send_query(
     "user": "u11",
     "num": 10,
     "categories": ["c4", "c3"],
+    "feelings": [f1, f5],
     "whiteList": ["i1", "i23", "i26", "i31"],
     "blackList": ["i21", "i25", "i30"]
   }
