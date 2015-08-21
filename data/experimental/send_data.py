@@ -11,11 +11,17 @@ def send_event(client):
   print client.get_status()
   print "Sending data..."
 
-  # client.create_event(
-  #   event="$set",
-  #   entity_type="user",
-  #   entity_id="u21"
-  # )
+  client.create_event(
+    event="$set",
+    entity_type="user",
+    entity_id="2"
+  )
+
+  client.create_event(
+    event="$set",
+    entity_type="user",
+    entity_id="1"
+  )
 
   # client.create_event(
   #   event="$set",
@@ -112,13 +118,13 @@ def send_event(client):
 
 
 
-  client.create_event(
-    event="view",
-    entity_type="user",
-    entity_id="u22",
-    target_entity_type="item",
-    target_entity_id="i62"
-  )  
+  # client.create_event(
+  #   event="view",
+  #   entity_type="user",
+  #   entity_id="u22",
+  #   target_entity_type="item",
+  #   target_entity_id="i62"
+  # )  
 
 
 

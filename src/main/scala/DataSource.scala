@@ -57,13 +57,15 @@ class DataSource(val dsp: DataSourceParams)
          */
         val title: String = properties.get[String]("title") 
         val categories: Array[String] = properties.get[Array[String]]("categories")
+        val categories2: Option[List[String]] = properties.getOpt[List[String]]("categories2")
         val feelings: Array[String] = properties.get[Array[String]]("feelings")
+        val feelings2: Option[List[String]] = properties.getOpt[List[String]]("feelings2")
         val cooktime: Int = properties.get[Int]("cooktime")
         val calories: Int = properties.get[Int]("calories")
         val expire: Int = properties.get[Int]("expire")
 
         // 다음 feature들을 이용해 ContentBasedFiltering을 적용할 예정
-        Item(entityId, title, categories, feelings, cooktime, calories, expire)
+        Item(entityId, title, categories, categories2, feelings, feelings2, cooktime, calories, expire)
       } catch {
         case e: Exception => {
           logger.error(s"Failed to get properties ${properties} of" +
@@ -135,7 +137,9 @@ case class Item(
   item: String, 
   title: String, 
   categories: Array[String], 
+  categories2: Option[List[String]],
   feelings: Array[String], 
+  feelings2: Option[List[String]],
   cooktime: Int,
   calories: Int, 
   expire: Int

@@ -524,18 +524,13 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
      * 모든 item에 대해 유저의 recentItems와의 유사도를 측정하여
      * 높은 score를 가진 item순으로 나열함
      */
-    val result = recentItems.flatMap { itemId =>
-      model.itemIds.get(itemId).map { j =>
-        val d = for(i <- 0 until model.projection.numRows) yield model.projection(i, j)
-        val col = model.projection.transpose.multiply(new DenseVector(d.toArray))
-        for(k <- 0 until col.size) yield new ItemScore(model.itemIds.inverse
-          .getOrElse(k, default="NA"), col(k))
-      }.getOrElse(Seq())
-    }.groupBy {
-      case(ItemScore(itemId, _)) => itemId
-    }.map(_._2.max).filter {
-      case(ItemScore(itemId, _)) => !recentItems.contains(itemId)
-    }.toArray.sorted.reverse.take(query.num)
+    val result = predictContentBased(
+      recentItems = recentItems,
+      model = model,
+      recipeModels = recipeModels,
+      query = query,
+      whiteList = whiteList,
+      blackList = finalBlackList)
 
     if(result.isEmpty) logger.info(s"User ${query.user} has no recent action.")
 
@@ -671,6 +666,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
           i = i,
           item = pm.item,
           categories = query.categories,
+          feelings = query.feelings,
           whiteList = whiteList,
           blackList = blackList
         )
@@ -703,6 +699,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
           i = i,
           item = pm.item,
           categories = query.categories,
+          feelings = query.feelings,
           whiteList = whiteList,
           blackList = blackList
         )
@@ -734,6 +731,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
           i = i,
           item = pm.item,
           categories = query.categories,
+          feelings = query.feelings,
           whiteList = whiteList,
           blackList = blackList
         )
@@ -753,6 +751,44 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
     val topScores = getTopN(indexScores, query.num)(ord).toArray
 
     topScores
+  }
+
+  /* Content Based Filtering */
+  /**
+   * 모든 item에 대해 유저의 recentItems와의 유사도를 측정하여
+   * 높은 score를 가진 item순으로 나열함
+   */
+  def predictContentBased(
+    recentItems: Set[String],
+    model: RecipeAlgorithmModel,
+    recipeModels: Map[Int, RecipeModel],
+    query: Query,
+    whiteList: Option[Set[Int]],
+    blackList: Set[Int]
+  ): Array[ItemScore] = {
+    val result = recentItems.flatMap { itemId =>
+      model.itemIds.get(itemId).map { j =>
+        val d = for(i <- 0 until model.projection.numRows) yield model.projection(i, j)
+        val col = model.projection.transpose.multiply(new DenseVector(d.toArray))
+        for(k <- 0 until col.size) yield new ItemScore(model.itemIds.inverse
+          .getOrElse(k, default="NA"), col(k))
+      }.getOrElse(Seq())
+    }.groupBy {
+      case(ItemScore(itemId, _)) => itemId
+    }.map(_._2.max).filter {
+      case(ItemScore(itemId, _)) => !recentItems.contains(itemId)
+    }.filter { case(ItemScore(itemId, _)) =>
+      isCandidateItem(
+        i = model.itemStringIntMap(itemId),
+        item = recipeModels.get(model.itemStringIntMap(itemId)).get.item,
+        categories = query.categories,
+        feelings = query.feelings,
+        whiteList = whiteList,
+        blackList = blackList)
+    }
+    .toArray.sorted.reverse.take(query.num)
+
+    result
   }
 
   /* score가 가장 높은 top n을 반환 */
@@ -809,6 +845,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
     i: Int,
     item: Item,
     categories: Option[Set[String]],
+    feelings: Option[Set[String]],
     whiteList: Option[Set[Int]],
     blackList: Set[Int]
   ): Boolean = {
@@ -817,11 +854,18 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
     !blackList.contains(i) &&
     // categories 필터링
     categories.map { cat =>
-      item.categories.toList.headOption.map { itemCat =>
+      item.categories2.map { itemCat =>
         // 쿼리의 categories와 겹치면 이 item을 keep
-        !(itemCat.toSet.intersect(cat.toSet[Any]).isEmpty)
+        !(itemCat.toSet.intersect(cat).isEmpty)
       }.getOrElse(false) // 만약 category가 없으면 item을 버림
-    }.getOrElse(true)
+    }.getOrElse(true) &&
+    // feelings 필터링
+    feelings.map { cat =>
+      item.feelings2.map { itemCat =>
+        // 쿼리의 categories와 겹치면 이 item을 keep
+        !(itemCat.toSet.intersect(cat).isEmpty)
+      }.getOrElse(false) // 만약 category가 없으면 item을 버림
+    }.getOrElse(true)    
 
   }
 

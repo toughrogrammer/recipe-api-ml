@@ -12,7 +12,9 @@ for i in range(1, 22):
   print engine_client.send_query(
     {
       "user": "u" + str(i), 
-      "num": 20
+      "num": 10,
+      "categories": ["c3"],
+      "feelings": ["f1"]
       #"blackList" : ["i43"]
     }
   )
