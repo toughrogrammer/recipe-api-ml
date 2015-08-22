@@ -441,7 +441,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
   }
 
   def predict(model: RecipeAlgorithmModel, query: Query): PredictedResult = {
-    logger.info(s"User ${query.user} requires ${query.num} recommendation recipes.")
+    logger.info(s"User ${query.user} requires ${query.limit} recommendation recipes.")
 
     /* Collaborative Filtering */
     val userFeatures = model.userFeatures
@@ -681,7 +681,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
       .seq // sequential collection으로 다시 변환
 
     val ord = Ordering.by[(Int, Double), Double](_._2).reverse
-    val topScores = getTopN(indexScores, query.num)(ord).toArray
+    val topScores = getTopN(indexScores, query.limit)(ord).toArray
 
     topScores
   }
@@ -711,7 +711,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
       .seq
 
     val ord = Ordering.by[(Int, Double), Double](_._2).reverse
-    val topScores = getTopN(indexScores, query.num)(ord).toArray
+    val topScores = getTopN(indexScores, query.limit)(ord).toArray
 
     topScores
   }
@@ -748,7 +748,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
       .seq // sequential collection으로 다시 변환
 
     val ord = Ordering.by[(Int, Double), Double](_._2).reverse
-    val topScores = getTopN(indexScores, query.num)(ord).toArray
+    val topScores = getTopN(indexScores, query.limit)(ord).toArray
 
     topScores
   }
@@ -786,7 +786,7 @@ class RecipeAlgorithm(val ap: RecipeAlgorithmParams)
         whiteList = whiteList,
         blackList = blackList)
     }
-    .toArray.sorted.reverse.take(query.num)
+    .toArray.sorted.reverse.take(query.limit)
 
     result
   }

@@ -18,6 +18,7 @@ Collaborative Filtering Algorithm과 Content Based Filtering Algorithm은 독립
 * 보지 않은 아이템만 추천할 수 있음 (optional)
 * 카테고리, 식감, 화이트리스트, 블랙리스트 필터링 가능 (optional)
 * 아이템을 일시 접근불가 설정 가능 (optional)
+* 페이징 기능
 
 ### Content Based Filtering Recommender
 
@@ -25,6 +26,7 @@ Collaborative Filtering Algorithm과 Content Based Filtering Algorithm은 독립
 * 보지 않은 아이템만 추천할 수 있음 (optional)
 * 카테고리, 식감, 화이트리스트, 블랙리스트 필터링 가능 (optional)
 * 아이템을 일시 접근불가 설정 가능 (optional)
+* 페이징 기능
 
 
 ## 사용법
@@ -40,7 +42,8 @@ Collaborative Filtering Algorithm과 Content Based Filtering Algorithm은 독립
 ### Input Query
 
 * UserID
-* Num of items to be recommended
+* Start num of items to be recommended (skip)
+* End num of items to be recommended (limit)
 * List of white-listed item categories (optional)
 * List of white-listed item feelings (optional)
 * List of white-listed itemIDs (optional)
@@ -155,14 +158,16 @@ print "Sending query..."
 print engine_client.send_query(
   {
     "user": "u10", 
-    "num": 50
+    "skip": 15,
+    "limit": 30
   }
 )
 
 print engine_client.send_query(
   {
     "user": "u11",
-    "num": 10,
+    "skip": 0,
+    "limit": 15,
     "categories": ["c4", "c3"],
     "feelings": [f1, f5],
     "whiteList": ["i1", "i23", "i26", "i31"],

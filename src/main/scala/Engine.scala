@@ -10,7 +10,8 @@ import io.prediction.controller.Engine
  */
 case class Query(
   user: String,
-  num: Int,
+  limit: Int,
+  skip: Int,
   categories: Option[Set[String]],
   feelings: Option[Set[String]],
   whiteList: Option[Set[String]],

@@ -24,7 +24,7 @@ class Serving
       .mapValues(itemScores => itemScores.map(_.score).reduce(_ + _))
       .toArray // (item id, score) 배열
       .sortBy(_._2)(Ordering.Double.reverse)
-      .take(query.num)
+      .slice(query.skip, query.limit)
       .map { case (k,v) => ItemScore(k, v) }
     
     if (!combined.isEmpty) logger.info(s"Recommendation result for user ${query.user} is successfully sent to the user.")
