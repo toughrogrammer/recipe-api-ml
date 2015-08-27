@@ -18,10 +18,10 @@ class Serving
     @transient lazy val logger = Logger[this.type]
 
     val standard: Seq[Array[ItemScore]] = if (query.limit - query.skip == 1) {
-      // if query 1 item, don't standardize
+      // 쿼리 아이템 갯수가 1이면, 표준화 안함
       predictedResults.map(_.itemScores)
     } else {
-      // Standardize the score before combine
+      // combine 하기 전에 표준화
       val mvList: Seq[MeanAndVariance] = predictedResults.map { pr =>
         meanAndVariance(pr.itemScores.map(_.score))
       }
@@ -29,9 +29,9 @@ class Serving
       predictedResults.zipWithIndex
         .map { case (pr, i) =>
           pr.itemScores.map { is =>
-            // standardize score (z-score)
-            // if standard deviation is 0 (when all items have the same score,
-            // meaning all items are ranked equally), return 0.
+            // 표준화 점수(z-score)
+            // 만약 표준편차가 0이면 = 모든 score가 같다면
+            // 0을 리턴함
             val score = if (mvList(i).stdDev == 0) {
               0
             } else {
